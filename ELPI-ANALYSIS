@@ -1,0 +1,1184 @@
+---
+title: "MA THESIS ELPI ANALYSIS"
+author: "María José Osimani"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(descr) 
+library(haven)
+library(stats)
+library(broom)
+library(knitr)
+library(kableExtra)
+library(table1)
+library(gtsummary)
+library(gt)
+library(lmtest)
+library(plm)
+library(ggplot2)
+
+#INTERVIEW DATA: 15175__________________________________________________________
+interview2010 <- read_dta("Entrevista_2010.dta")
+
+interview2010 <- interview2010 %>%
+  filter(a4==1) %>%                                        #biological mother lives there
+  filter(a13==1 | a13==4 | is.na(a13)) %>%                 #if absent father he can participate
+  mutate(bioparent = 
+           ifelse(a11 == 1, "1. Both biological parents", 
+                  "2. Just biological mother"),            #biological parent presence
+         bioparent=as.factor(bioparent)) %>%
+  filter(a14!=9 | is.na(a14)) %>%                          #valid info of absent father visit
+  mutate(fathervisit =
+           ifelse(a14==1 | a14==2, "1. Everyday",
+           ifelse(a14==3 | a14==4, "2. Weekly",
+           ifelse(a14==5 | a14==6, "3. Monthly",
+                  "4. Do not"))),                          #father's visits variable
+         fathervisit=as.factor(fathervisit)) %>%
+  filter(a15!=9 | is.na(a15)) %>%                          #valid info of absent father gives economic support
+  mutate(ecsupport =
+           ifelse(a15==1, "2. Yes", "1. No"),              #father's economic support variable
+         ecsupport=as.factor(ecsupport)) %>%
+  filter(g17_6!=9) %>%                                     #valid info premature birth
+  mutate(premature =
+           ifelse(g17_6==1, "2. Yes", "1. No"),            #premature birth
+         premature=as.factor(premature)) %>%
+  mutate(dadread =
+           ifelse(is.na(g42_a1) & is.na(g42_a2)
+                  & is.na(g42_a3) & is.na(g42_a4), NA,
+                  ifelse(is.na(g42_a2), 0, 1)),
+         dadstory =
+           ifelse(is.na(g42_b1) & is.na(g42_b2)
+                  & is.na(g42_b3) & is.na(g42_b4), NA,
+                  ifelse(is.na(g42_b2), 0, 1)),
+         dadsing =
+           ifelse(is.na(g42_c1) & is.na(g42_c2)
+                  & is.na(g42_c3) & is.na(g42_c4), NA,
+                  ifelse(is.na(g42_c2), 0, 1)),
+         dadtime =
+           ifelse(is.na(g42_f1) & is.na(g42_f2)
+                  & is.na(g42_f3) & is.na(g42_f4), NA,
+                  ifelse(is.na(g42_f2), 0, 1)),
+         fatherint = dadread + dadstory + dadsing + dadtime,  #number of father interactions
+         fathercare =
+           ifelse(fatherint!=0, "2. Yes", "1. No"),      #father provides care last 7 days
+         fathercare=as.factor(fathercare)) %>%
+  mutate(muestra = 1)
+
+interview2010 <- interview2010 %>%
+  select(folio, muestra, bioparent, fathervisit, ecsupport, premature, fatherint, fathercare)
+
+#final data: 14299
+
+table(interview2010$bioparent)    
+#Parent who live in the household
+#1. both biological parents: 10316 72.5%
+#2. just biological mother: 3920 27.5%
+
+#HOUSEHOLD DATA: 74237__________________________________________________________
+household2010 <- read_dta("Hogar_2010.dta")
+
+household2010 <- household2010 %>%
+  filter(a16!=12) %>%                                      #remove domestic service in-house observations
+  mutate(momage = as.numeric(a19)) %>%
+  mutate_at(c('d1m', 'd2m', 'd3m', 'd4m', 'd5m',
+              'd6m', 'd7m', 'd8m', 'd9m'), as.numeric) %>% 
+  mutate(d1m = ifelse(d1m==99, NA, d1m),
+         d2m = ifelse(d2m==99, NA, d2m),
+         d3m = ifelse(d3m==99, NA, d3m),
+         d4m = ifelse(d4m==99, NA, d3m),
+         d5m = ifelse(d5m==99, NA, d5m),
+         d6m = ifelse(d6m==99, NA, d6m),
+         d6m = ifelse(d6m==99, NA, d6m),
+         d7m = ifelse(d7m==99, NA, d7m),
+         d8m = ifelse(d8m==99, NA, d8m),
+         d9m = ifelse(d9m==99, NA, d9m),
+         indincome = 
+           rowSums(select(., "d1m","d2m", "d3m", "d4m", "d5m",
+                          "d6m","d7m", "d8m", "d9m"), 
+                           na.rm = T)) %>%                 #individual income variable
+  mutate(indincome = 
+           ifelse(is.na(d1m) & is.na(d2m) & is.na(d3m) &
+                  is.na(d5m) & is.na(d6m) & is.na(d6m) &
+                  is.na(d7m) & is.na(d8m) & is.na(d9m), 
+                  NA, indincome)) %>%
+  mutate(familyfolio =
+           paste(folio, a20, sep = "_")) %>%
+  group_by(familyfolio) %>%
+  mutate(familyincome = sum(indincome, na.rm = T),         #family income variable
+         indeqsize =
+           ifelse(a21 == 1, 1,
+           ifelse(a21 != 1 & a19 >= 14, 0.5, 0.3))) %>%
+  group_by(familyfolio) %>%
+  mutate(fameqsize = sum(indeqsize, na.rm = T),            #family oecd equivalent size
+         eqincome = 
+           familyincome/fameqsize) %>%                     #oecd equivalised income
+  ungroup() %>%
+  mutate(eqincomeE = eqincome/1000,                        #family eq income by 1000
+         indincomeE = indincome/1000) %>%                  #individual income by 1000
+  group_by(folio) %>%
+  mutate(familyunit=max(a20), 
+         extendedfam=
+           ifelse(familyunit==1,"1. No", "2. Yes")) %>%    #one or more family units
+  mutate(extendedfam=as.factor(extendedfam)) %>%
+  mutate(adoptdad = 
+           ifelse(a16==4, 1, 0)) %>%
+  mutate(d_adoptdad=max(adoptdad)) %>%                     #adoptive dad in household
+  filter(d_adoptdad!=1) %>%                                #delete house with adoptive dad
+  mutate(stepparent = 
+           ifelse(a16==5, 1, 0)) %>%
+  mutate(d_stepparent=max(stepparent)) %>%                 #step dad in household
+  filter(d_stepparent!=1)  %>%                             #delete house with adoptive dad
+  mutate(maritalstatus = 
+           ifelse(a22==1, "1. Married",
+           ifelse(a22==2, "2. Cohabiting",
+           ifelse(a22==3 | a22==4 | a22==5 | a22==8,
+                  "3. Separated/divorced",
+           ifelse(a22==7, "4. Single", NA)))),             #marital status variable
+         maritalstatus=as.factor(maritalstatus)) %>%
+  group_by(folio) %>%
+  mutate(attendpreschool =
+           ifelse(a16==13 & b1==1, 1, 0)) %>%
+  mutate(d_preschool=max(attendpreschool)) %>%             
+  mutate(preschool=
+           ifelse(d_preschool==1, "2. Yes", "1. No")) %>%  #child attends preschool
+  mutate(preschool=as.factor(preschool)) %>%
+  mutate(b2n = ifelse(b2n==21, 0, ifelse(b2n>22, NA, b2n))) %>%
+  mutate(educlevel=
+           ifelse(b2n<=7, "1. No or Low level",
+           ifelse(b2n>7 & b2n <13 | b2n == 14, "2. School level",
+           ifelse(b2n==13 | b2n>14, "3. Higher level", NA)))) %>%  #educational level variable
+  mutate(educlevel=as.factor(educlevel)) %>%
+  mutate(works=
+           ifelse(c1==1 | c3==1, "2. Yes", "1. No")) %>%  #work situation variable
+  mutate(works=as.factor(works)) %>%
+  filter(a16==1) 
+
+household2010 <- household2010 %>%
+  select(folio, momage, extendedfam, maritalstatus, preschool, educlevel, 
+         works, indincome, indincomeE, eqincome, eqincomeE)
+
+#QUESTIONEIRE: INTERVIEW + HOUSEHOLD
+questionaire2010 <- merge(interview2010, household2010, by = "folio")
+
+# EVALUATION DATA_______________________________________________________________
+evaluation2010 <- read_dta("Evaluaciones_2010.dta")
+
+evaluation2010 <- evaluation2010 %>%
+  filter(!is.na(batelle_pt_total) |
+           !is.na(tvip_pt)) %>%
+  rename(battelle_pb_total = batelle_pb_total,
+         battelle_pt_total = batelle_pt_total) %>%
+  mutate(age_group =
+           ifelse(edad_meses >= 0 & edad_meses < 24, "[0 - 2[",
+           ifelse(edad_meses >= 24 & edad_meses < 48, "[2 to 4[",
+           ifelse(edad_meses >= 48 & edad_meses < 60, "[4 to 6[", "6+"))),
+         talks =
+           ifelse(hm1_1 == 1, "2. Yes", "1. No"), 
+         showsaffection =
+           ifelse(hm1_6 == 1, "2. Yes", "1. No"),
+         yells =
+           ifelse(hm1_9 == 0, "2. Yes", "1. No"))
+
+evaluation2010 <- evaluation2010 %>%
+  select(folio, edad_meses, age_group,talks, showsaffection, yells, 
+         battelle_pb_total, battelle_pt_total, tvip_pb, tvip_pt)
+
+#ELPI 2010: QUESTOINAIRE + EVALUATION
+ELPI2010 <- merge(questionaire2010, evaluation2010, by = "folio")
+
+ELPI2010 <- ELPI2010 %>%
+  mutate(housecomp =
+           ifelse(bioparent == "1. Both biological parents"
+                  & maritalstatus== "1. Married", "1. Two married parents",
+           ifelse(bioparent == "1. Both biological parents"
+                  & maritalstatus== "2. Cohabiting", "2. Two cohabiting parents",
+                  "3. Lone mother"))) %>%
+  filter(!(bioparent == "2. Just biological mother" &
+             maritalstatus == "2. Cohabiting"))%>%
+  mutate(year = 2010)
+
+saveRDS(ELPI2010, "ELPI 2010.rds")
+
+#INTERVIEW DATA: 16033__________________________________________________________
+interview2012 <- read_dta("Entrevista_2012.dta")
+
+interview2012 <- interview2012 %>%
+  filter(a2==1) %>%                                        #biological mother lives there
+  filter(n1==1 | n1==4 | n1==7 | is.na(n2)) %>%            #if absent father he can participate
+  mutate(bioparent = 
+           ifelse(is.na(n1) | n1==7, "1. Both biological parents", 
+                  "2. Just biological mother"),            #biological parent presence
+         bioparent=as.factor(bioparent)) %>%
+  filter(n8<8 | is.na(n8)) %>%                             #valid info of absent father visit
+  mutate(fathervisit =
+           ifelse(n8==1 | n8==2, "1. Everyday",
+           ifelse(n8==3 | n8==4, "2. Weekly",
+           ifelse(n8==5 | n8==6, "3. Monthly",
+                  "4. Do not"))),                          #father's visits variable
+         fathervisit=as.factor(fathervisit)) %>%
+  filter(n9!=9 | is.na(n9)) %>%                            #valid info of absent father gives economic support
+  mutate(ecsupport =
+           ifelse(n9==1, "2. Yes", "1. No"),                #father's economic support variable
+         ecsupport=as.factor(ecsupport)) %>%
+  filter(b20_6!=9| is.na(b20_6)) %>%                       #valid info premature birth
+  mutate(premature =
+           ifelse(b20_6==1, "2. Yes",
+           ifelse(b20_6==2, "1. No", NA)),                 #premature birth
+         premature=as.factor(premature)) %>%
+  mutate(dadread =
+           ifelse(f21a_p_t == 1, 0,
+           ifelse(f21a_p_t>4, 99, 1)),
+         dadstory =
+           ifelse(f21b_p_t == 1, 0,
+           ifelse(f21b_p_t>4, 99, 1)),
+         dadsing =
+           ifelse(f21c_p_t == 1, 0,
+           ifelse(f21c_p_t>4, 99, 1)),
+         dadtime =
+           ifelse(f21f_p_t == 1, 0,
+           ifelse(f21f_p_t>4, 99, 1))) %>%
+  mutate(fatherint = 
+           rowSums(select(., dadread, 
+                          dadstory, dadsing, dadtime)),
+         fatherint = 
+           ifelse(fatherint > 5, NA, fatherint),
+         fathercare =
+           ifelse(fatherint!=0, "2. Yes", "1. No"),      #father provides care last 7 days
+         fathercare=as.factor(fathercare))
+
+interview2012 <- interview2012 %>%
+  select(folio, muestra, bioparent, fathervisit, ecsupport, premature, fatherint, fathercare)
+
+#final data: 14236
+
+prop.table(table(interview2012$bioparent))
+#Parent who live in the household
+#1. both biological parents: 10638 71.4%
+#2. just biological mother: 4245 28.5%
+
+#HOUSEHOLD DATA: 74237__________________________________________________________
+household2012 <- read_dta("Hogar_2012.dta")
+
+household2012 <- household2012 %>%
+  filter(i2!=12) %>%                                      #remove domestic service in-house observations
+  mutate(momage = as.numeric(i1)) %>%
+  mutate_at(c('l1_monto', 'l2_monto', 'l3_monto','l4_monto','l5_monto', 
+              'l6_monto', 'l7a_tr', 'l7a_n', 'l7b_a', 'l7b_b', 'l7b_c', 
+              'l7b_d', 'l7b_e','l7b_f','l7b_g', 'l7b_h', 'l7b_i','l7b_j',
+              'l7b_k', 'l7b_l', 'l7b_m', 'l7b_n', 'l7b_o', 'l7b_p_monto', 
+              'l7b_q_monto', 'l7b_r_monto', 'l8_monto', 'l9_monto', 
+              'l10_monto'), as.numeric) %>%
+  mutate(l7a_tr = 
+           ifelse(l7a_tr == 1, 7179,
+           ifelse(l7a_tr == 2, 5054,
+           ifelse(l7a_tr == 3, 1600, NA)))) %>%
+  mutate(l7_monto = l7a_tr*l7a_n) %>%
+  mutate(l1_monto=ifelse(l1_monto==99, NA, l1_monto),
+         l2_monto=ifelse(l2_monto==99, NA, l2_monto),
+         l3_monto=ifelse(l3_monto==99, NA, l3_monto),
+         l4_monto=ifelse(l4_monto==99, NA, l4_monto),
+         l5_monto=ifelse(l5_monto==99, NA, l5_monto),
+         l6_monto=ifelse(l6_monto==99, NA, l6_monto),
+         l8_monto=ifelse(l8_monto==99, NA, l8_monto),
+         l9_monto=ifelse(l9_monto==99, NA, l9_monto)) %>%
+  ungroup() %>%
+  mutate(indincome = 
+           rowSums(select(., "l1_monto", "l3_monto", "l4_monto"
+                          , "l5_monto", "l6_monto", "l7_monto"
+                          , "l8_monto", "l9_monto"), na.rm = T)) %>%  #individual income variable
+  mutate(indincome = 
+           ifelse(is.na(l1_monto) & is.na(l2_monto) & 
+                    is.na(l3_monto) & is.na(l4_monto) & 
+                    is.na(l5_monto) & is.na(l6_monto) & 
+                    is.na(l7_monto) & is.na(l8_monto) & 
+                    is.na(l9_monto), NA, indincome)) %>%
+  mutate(familyfolio =
+           paste(folio, i5, sep = "_")) %>%
+  group_by(familyfolio) %>%
+  mutate(familyincome = sum(indincome, na.rm = T),         #family income variable
+         indeqsize =
+           ifelse(i6 == 1, 1,
+                  ifelse(i6 != 1 & i1 >= 14, 0.5, 0.3))) %>%
+  group_by(familyfolio) %>%
+  mutate(fameqsize = sum(indeqsize, na.rm = T),            #family oecd equivalent size
+         eqincome = 
+           familyincome/fameqsize) %>%                     #oecd equivalised income
+  ungroup() %>%
+  mutate(eqincomeE = eqincome/1000,                        #family eq income by 1000
+         indincomeE = indincome/1000) %>%                  #individual income by 1000
+  group_by(folio) %>%
+  mutate(familyunit=max(i5), 
+         extendedfam=
+           ifelse(familyunit==1,"1. No", "2. Yes")) %>%    #one or more family units
+  mutate(extendedfam=as.factor(extendedfam)) %>%
+  mutate(adoptdad = 
+           ifelse(i2==4, 1, 0)) %>%
+  mutate(d_adoptdad=max(adoptdad)) %>%                     #adoptive dad in household
+  filter(d_adoptdad!=1) %>%                                #delete house with adoptive dad
+  mutate(stepparent = 
+           ifelse(i2==5, 1, 0)) %>%
+  mutate(d_stepparent=max(stepparent)) %>%                 #step dad in household
+  filter(d_stepparent!=1)  %>%                             #delete house with adoptive dad
+  mutate(maritalstatus = 
+           ifelse(i7==1, "1. Married",
+           ifelse(i7==2, "2. Cohabiting",
+           ifelse(i7==3 | i7==4 | i7==5 | i7==8,
+                  "3. Separated/divorced",
+           ifelse(i7==7, "4. Single", NA))))) %>%         #marital stattus variable
+  mutate(maritalstatus=as.factor(maritalstatus)) %>%
+  group_by(folio) %>%
+  mutate(attendpreschool =
+           ifelse(i2==13 & j1==1, 1, 0),
+        d_preschool=max(attendpreschool),            
+        preschool=
+           ifelse(d_preschool==1, "2. Yes", "1. No"),     #child attends preschool
+        preschool=as.factor(preschool)) %>%
+  mutate(j2n = ifelse(j2n==21, 0, ifelse(j2n>22, NA, j2n)),
+        educlevel=
+           ifelse(j2n<=9, "1. No or Low level",
+           ifelse(j2n>9 & j2n <15 | j2n == 16, "2. School level",
+           ifelse(j2n==15 | j2n>16, "3. Higher level", NA))),     #educational level variable
+        educlevel=as.factor(educlevel)) %>%
+  mutate(works=
+           ifelse(k1==1 | k3==1, "2. Yes", "1. No"),      #work situation variable
+         works=as.factor(works)) %>%
+  filter(i2==1)
+
+household2012 <- household2012 %>%
+  select(folio, momage, extendedfam, maritalstatus, preschool, educlevel, 
+         works, indincome, indincomeE, eqincome, eqincomeE)
+
+#QUESTIONEIRE: INTERVIEW + HOUSEHOLD
+questionaire2012 <- merge(interview2012, household2012, by = "folio")
+
+
+# EVALUATION DATA_______________________________________________________________
+evaluation2012 <- read_dta("Evaluaciones_2012.dta")
+
+evaluation2012 <- evaluation2012 %>%
+  filter(!is.na(batelle_pt_total) |
+           !is.na(tvip_pt)) %>%
+  rename(battelle_pb_total = batelle_pb_total,
+         battelle_pt_total = batelle_pt_total) %>%
+  mutate(age_group =
+           ifelse(edad_meses >= 0 & edad_meses < 24, "[0 - 2[",
+           ifelse(edad_meses >= 24 & edad_meses < 48, "[2 to 4[",
+           ifelse(edad_meses >= 48 & edad_meses < 60, "[4 to 6[", "6+"))),
+         talks =
+           ifelse(hm1_1 == 1, "2. Yes", "1. No"), 
+         showsaffection =
+           ifelse(hm1_6 == 1, "2. Yes", "1. No"),
+         yells =
+           ifelse(hm1_9 == 0, "2. Yes", "1. No"))
+
+evaluation2012 <- evaluation2012 %>%
+  select(folio, edad_meses, age_group,talks, showsaffection, yells, 
+         battelle_pb_total, battelle_pt_total, tvip_pb, tvip_pt)
+
+#ELPI 2012: QUESTOINAIRE + EVALUATION
+ELPI2012 <- merge(questionaire2012, evaluation2012, by = "folio")
+
+ELPI2012 <- ELPI2012 %>%
+  mutate(housecomp =
+           ifelse(bioparent == "1. Both biological parents"
+                  & maritalstatus== "1. Married", "1. Two married parents",
+           ifelse(bioparent == "1. Both biological parents"
+                  & maritalstatus== "2. Cohabiting", "2. Two cohabiting parents",
+                  "3. Lone mother"))) %>%
+  filter(!(bioparent == "2. Just biological mother" & 
+             maritalstatus == "2. Cohabiting")) %>%
+  mutate(year = 2012)
+
+saveRDS(ELPI2012, "ELPI 2012.rds")
+
+#INTERVIEW DATA: _______________________________________________________________
+questionaire2017 <- read_dta("Entrevista_2017.dta")
+
+questionaire2017 <- questionaire2017 %>%
+  filter(h1!=14) %>%                                      #remove domestic service in-house observations
+  mutate(momage = as.numeric(h3)) %>%
+  mutate_at(c('y1', 'y2', 'y3', 'y4',
+              'y5', 'y6', 'y7','y8',
+              'y9', 'y10', 'y11', 'y12',
+              'y13'), as.numeric) %>%
+  mutate(y1=ifelse(y1==9, NA, y1),
+         y2=ifelse(y2==9, NA, y2),
+         y3=ifelse(y3==9, NA, y3),
+         y4=ifelse(y4==9, NA, y4),
+         y5=ifelse(y5==9, NA, y5),
+         y6=ifelse(y6==9, NA, y6),
+         y7=ifelse(y7==9, NA, y7),
+         y8=ifelse(y8==9, NA, y8),
+         y9=ifelse(y9==9, NA, y9),
+         y10=ifelse(y10==9, NA, y10),
+         y11=ifelse(y11==9, NA, y11),
+         y12=ifelse(y12==9, NA, y12),
+         y13=ifelse(y13==9, NA, y13)) %>%
+  ungroup() %>%
+  mutate(indincome = 
+           rowSums(select(., "y1", "y2", "y3", "y4", "y5",
+                          "y6", "y7", "y8", "y9", "y10", 
+                          "y11", "y12", "y13"), na.rm = T), #individual income variable
+         indincome = 
+           ifelse(is.na(y1) & is.na(y2) & is.na(y3) & 
+                    is.na(y4) & is.na(y5) & is.na(y6) & 
+                    is.na(y7) & is.na(y8) & is.na(y9) & 
+                    is.na(y10) & is.na(y11) & is.na(y12) & 
+                    is.na(y13), NA, indincome)) %>%
+  group_by(folio) %>%
+  mutate(familyincome = sum(indincome, na.rm = T),         #family income variable
+         indeqsize =
+           ifelse(h17 == 1, 1,
+                  ifelse(h17 != 1 & h3 >= 14, 0.5, 0.3)),
+        fameqsize = sum(indeqsize, na.rm = T),             #family oecd equivalent size
+        eqincome = familyincome/fameqsize) %>%             #oecd equivalised income
+  ungroup() %>%
+  mutate(eqincomeE = eqincome/1000,                        #family eq income by 1000
+         indincomeE = indincome/1000) %>%                  #individual income by 1000
+  mutate(extendedfam=
+           ifelse(tipohogar<4,"1. No", "2. Yes"),          #one or more family units
+         extendedfam=as.factor(extendedfam)) %>%
+  group_by(folio) %>%
+  mutate(biodad = 
+           ifelse(h1==3, 1, 0),
+         d_biodad=max(biodad),                             #biological dad in household
+         bioparent =
+           ifelse(h1 == 2 & d_biodad == 1, 
+                  "1. Both biological parents",
+                  "2. Just biological mother"),            #biological parent presence
+         bioparent=as.factor(bioparent)) %>%
+  group_by(folio) %>%
+  mutate(adoptdad = 
+           ifelse(h1==5, 1, 0),
+         d_adoptdad=max(adoptdad)) %>%                     #adoptive dad in household
+  filter(d_adoptdad!=1) %>%                                #delete house with adoptive dad
+  mutate(stepparent = 
+           ifelse(h1==7, 1, 0),
+         d_stepparent=max(stepparent)) %>%                 #step dad in household
+  filter(d_stepparent!=1)  %>%                             #delete house with adoptive dad
+  mutate(maritalstatus = 
+           ifelse(h16==1, "1. Married",
+           ifelse(h16==2 | h16==3, "2. Cohabiting",
+           ifelse(h16==4 | h16==5 | h16==6, "3. Separated/divorced",
+           ifelse(h16==8, "4. Single", NA)))),             #marital status variable
+         maritalstatus=as.factor(maritalstatus)) %>%
+  group_by(folio) %>%
+  mutate(attendpreschool =
+           ifelse(h1==1 & e1==1, 1, 0),
+         d_preschool=max(attendpreschool),            
+         preschool=
+           ifelse(d_preschool==1, "2. Yes", "1. No"),      #child attends preschool
+         preschool=as.factor(preschool)) %>%
+  mutate(e4 = ifelse(e4==88, NA, e4),
+         educlevel=
+           ifelse(e4<=7, "1. No or Low level",
+           ifelse(e4>7 & e4 <13, "2. School level",
+           ifelse(e4>12, "3. Higher level", NA))),         #educational level variable
+         educlevel=as.factor(educlevel)) %>%
+  mutate(works=
+           ifelse(o1==1 | o3==1, "2. Yes", "1. No"),       #work situation variable
+         works=as.factor(works)) %>%
+  filter(h1==2)
+
+questionaire2017 <- questionaire2017 %>%
+  filter(p3==1 | p3==2 | is.na(p3)) %>%                    #valid info of absent father visit
+  mutate(p5a = ifelse(p4 == 2, 10, p5a),
+         fathervisit =
+           ifelse(p5a < 3, "1. Everyday",
+           ifelse(p5a == 3 | p5a==4, "2. Weekly",
+           ifelse(p5a > 4 & p5a < 8, "3. Monthly",
+           ifelse(p5a > 7, "4. Do not")))),                    
+         fathervisit=as.factor(fathervisit)) %>%           #father's visits variable
+  mutate(ecsupport =
+           ifelse(p6==1, "2. Yes", "1. No"),               #father's economic support variable
+         ecsupport=as.factor(ecsupport)) %>%
+  filter(c26_6!=9| is.na(c26_6)) %>%                       #valid info premature birth
+  mutate(premature =
+           ifelse(c26_6==1, "2. Yes",
+           ifelse(c26_6==2, "1. No", NA)),                 #premature birth
+         premature=as.factor(premature)) %>%
+  mutate(fatherint = NA,
+         fathercare = NA) %>%                              #father provides care last 7 days
+  mutate(muestra =
+             ifelse(!is.na(orden_10), 1, 
+             ifelse(is.na(orden_10) &
+                      !is.na(orden_12), 2, 3)))
+
+questionaire2017 <- questionaire2017 %>%
+  select(folio, muestra, bioparent, fathervisit, ecsupport, 
+         premature, fatherint, fathercare, momage, 
+         extendedfam, maritalstatus, preschool, educlevel, 
+         works, indincome, indincomeE, eqincome, eqincomeE)
+
+# EVALUATION DATA_______________________________________________________________
+evaluation2017 <- read_dta("Evaluaciones_2017.dta")
+
+evaluation2017 <- evaluation2017 %>%
+  filter(!is.na(battelle_pt_total) |
+           !is.na(tvip_ps)) %>%
+  rename(edad_meses = edad_mesesr,
+         battelle_pb_total = bt_t,
+         tvip_pt = tvip_ps) %>%
+  mutate(age_group =
+           ifelse(edad_meses >= 0 & edad_meses < 24, "[0 - 2[",
+           ifelse(edad_meses >= 24 & edad_meses < 48, "[2 to 4[",
+           ifelse(edad_meses >= 48 & edad_meses < 60, "[4 to 6[", "6+"))),
+         talks =
+           ifelse(home_p1 == 1, "2. Yes", "1. No"), 
+         showsaffection =
+           ifelse(home_p3 == 1, "2. Yes", "1. No"),
+         yells =
+           ifelse(home_p11 == 0, "2. Yes", "1. No"))
+
+evaluation2017 <- evaluation2017 %>%
+  select(folio, edad_meses, age_group,talks, showsaffection, yells, 
+         battelle_pb_total, battelle_pt_total, tvip_pb, tvip_pt)
+
+#ELPI 2012: QUESTOINAIRE + EVALUATION
+ELPI2017 <- merge(questionaire2017, evaluation2017, by = "folio")
+
+ELPI2017 <- ELPI2017 %>%
+  mutate(housecomp =
+           ifelse(bioparent == "1. Both biological parents"
+                  & maritalstatus== "1. Married", "1. Two married parents",
+           ifelse(bioparent == "1. Both biological parents"
+                  & maritalstatus== "2. Cohabiting", "2. Two cohabiting parents",
+                  "3. Lone mother"))) %>%
+  filter(!(bioparent == "2. Just biological mother" & 
+             maritalstatus == "2. Cohabiting")) %>%
+  mutate(year = 2017)
+
+saveRDS(ELPI2017, "ELPI 2017.rds")
+
+rm(list = ls())
+
+ELPI2010 <- readRDS("ELPI 2010.rds")
+ELPI2012 <- readRDS("ELPI 2012.rds")
+ELPI2017 <- readRDS("ELPI 2017.rds")
+
+ELPI1 = bind_rows(ELPI2010, ELPI2012)
+ELPITOTAL = bind_rows(ELPI1, ELPI2017)
+
+table(ELPITOTAL$talks, ELPITOTAL$year, useNA = "ifany")
+
+ELPITOTAL <- ELPITOTAL %>%
+  mutate(premature = 
+           ifelse(is.na(premature), "Miss", premature),
+         prematuro = 
+           ifelse(premature == 1, 1,0)) %>%
+  group_by(folio) %>%
+  mutate(premature_max = max(prematuro)) %>%
+  ungroup() %>%
+  mutate(premature = 
+           ifelse(premature_max==1, "2. Yes", "1. No")) %>%
+  mutate(talks2 = 
+           ifelse(is.na(talks), 0, 
+           ifelse(talks == "2. Yes", 2, 1))) %>%
+  group_by(folio) %>%
+  mutate(talks_max = max(talks2)) %>%
+  ungroup() %>%
+  mutate(talks = 
+           ifelse(talks_max== 2, "2. Yes",
+            ifelse(talks_max == 1, "1. No", NA))) %>%
+  mutate(showsaffection2 = 
+           ifelse(is.na(showsaffection), 0, 
+                  ifelse(showsaffection == "2. Yes", 2, 1))) %>%
+  group_by(folio) %>%
+  mutate(showsaffection_max = max(showsaffection2)) %>%
+  ungroup() %>%
+  mutate(showsaffection = 
+           ifelse(showsaffection_max== 2, "2. Yes",
+           ifelse(showsaffection_max == 1, "1. No", NA))) %>%
+  mutate(yells2 = 
+           ifelse(is.na(yells), 0, 
+           ifelse(yells == "2. Yes", 2, 1))) %>%
+  group_by(folio) %>%
+  mutate(yells_max = max(yells2)) %>%
+  ungroup() %>%
+  mutate(yells = 
+           ifelse(yells_max== 2, "2. Yes",
+           ifelse(yells_max == 1, "1. No", NA))) %>%
+  filter(eqincomeE >=10,
+         eqincomeE < quantile(eqincomeE, probs = 0.99)) 
+  
+ELPITOTAL <- ELPITOTAL %>%
+  select(folio, year, muestra, housecomp, bioparent, fathervisit, ecsupport, 
+         premature, fatherint, fathercare,
+         momage, extendedfam, maritalstatus, preschool, 
+         educlevel, works, indincome, indincomeE, eqincome, eqincomeE,
+         edad_meses, age_group,talks, showsaffection, yells, 
+         battelle_pb_total, battelle_pt_total, tvip_pb, tvip_pt)
+
+label(ELPITOTAL$year) <- "Year of survey"
+label(ELPITOTAL$muestra) <- "Sample"
+label(ELPITOTAL$housecomp) <- "Household composition"
+label(ELPITOTAL$bioparent) <- "Biological parents on household"
+label(ELPITOTAL$fathervisit) <- "Absent father visits"
+label(ELPITOTAL$ecsupport) <- "Absent gives economical support"
+label(ELPITOTAL$premature) <- "Child was born premature"
+label(ELPITOTAL$fatherint) <- "Father quality interactions"
+label(ELPITOTAL$fathercare) <- "Father provides regular care"
+label(ELPITOTAL$momage) <- "Mother's age"
+label(ELPITOTAL$extendedfam) <- "Live in an extended family"
+label(ELPITOTAL$maritalstatus) <- "Marital status"
+label(ELPITOTAL$preschool) <- "Child goes to preschool"
+label(ELPITOTAL$educlevel) <- "Mother's educational level"
+label(ELPITOTAL$works) <- "Mother is working"
+label(ELPITOTAL$indincome) <- "Mother's individual income"
+label(ELPITOTAL$indincomeE) <- "Mother's individual income in €"
+label(ELPITOTAL$eqincome) <- "Family's oecd equivalised income"
+label(ELPITOTAL$eqincomeE) <- "Family's oecd equivalised income in €"
+label(ELPITOTAL$edad_meses) <- "Child's age (on months)"
+label(ELPITOTAL$age_group) <- "Age group"
+label(ELPITOTAL$talks) <- "Mother talks to the child at least twice"
+label(ELPITOTAL$showsaffection) <- "Mother gives kisses, cuddles, or hugs the child at least once"
+label(ELPITOTAL$yells) <- "Mum yells at the child at least once"
+label(ELPITOTAL$battelle_pb_total) <- "Battelle Score"
+label(ELPITOTAL$battelle_pt_total) <- "Battelle Score Standarised"
+label(ELPITOTAL$tvip_pb) <- "PPVT Score"
+label(ELPITOTAL$tvip_pt) <- "PPVT Score Standarised"
+
+saveRDS(ELPITOTAL, "ELPI Total.rds")
+
+```{r, echo=FALSE}
+lonemom <- ELPITOTAL %>%
+  filter(bioparent == "2. Just biological mother") %>% 
+  select(eqincomeE, fathervisit, ecsupport, fatherint, talks, 
+         showsaffection, yells)
+twoparents <- ELPITOTAL %>%
+  filter(bioparent == "1. Both biological parents") %>% 
+  select(eqincomeE, fatherint, talks, showsaffection, yells)
+twomarrparents <- ELPITOTAL %>%
+  filter(housecomp == "1. Two married parents") %>% 
+ select(eqincomeE, fatherint, talks, showsaffection, yells)
+```
+
+
+
+
+```{r}
+#lone mothers vs two-parents household income
+tidy(t.test(lonemom$eqincomeE, twoparents$eqincomeE)) %>% 
+  select(statistic, p.value,	conf.low,	conf.high,	alternative) %>%
+knitr::kable(col.names =  
+               c("t", "p-value", "CI low", "CI high", "alt"),
+             caption = "T-Test Household income: Lone mothers vs Two-parents") %>% 
+kableExtra::kable_styling(full_width = FALSE)
+```
+
+
+```{r, echo=FALSE}
+#lone mothers vs two married parents household income
+tidy(t.test(lonemom$eqincomeE, twomarrparents$eqincomeE)) %>% 
+  select(statistic, p.value,	conf.low,	conf.high,	alternative) %>%
+knitr::kable(col.names =  
+               c("t", "p-value", "CI low", "CI high", "alt"),
+             caption = "T-Test Household income: Lone mothers vs Married-parents") %>% 
+kableExtra::kable_styling(full_width = FALSE)
+```
+
+```{r, echo=FALSE}
+#lone mothers vs two parents father interactions
+
+tidy(t.test(lonemom$fatherint, twoparents$fatherint)) %>% 
+  select(statistic, p.value,	conf.low,	conf.high,	alternative) %>%
+knitr::kable(col.names =  
+               c("t", "p-value", "CI low", "CI high", "alt"),
+             caption = "T-Test Father's interactions: Lone mothers vs Two-parents") %>% 
+kableExtra::kable_styling(full_width = FALSE)
+
+```
+
+
+
+```{r, echo=FALSE}
+#Mother's attitude comparison
+table1(~talks + showsaffection + yells | housecomp,
+       data = ELPITOTAL, topclass="shade", overall = F,
+       caption = "Mother's attitude by household composition")
+```
+
+```{r, echo=FALSE}
+#lone mothers vs married parents attitudes
+tidy(chisq.test(table(ELPITOTAL$housecomp, ELPITOTAL$talks))) %>% 
+  select(statistic, p.value) %>%
+knitr::kable(col.names =  
+               c("X-squared", "p-value"),
+             caption = "Chi-squared test Mother talks to child by household composition") %>% 
+kableExtra::kable_styling(full_width = FALSE)
+```
+
+```{r, echo=FALSE}
+tidy(chisq.test(table(ELPITOTAL$housecomp, ELPITOTAL$showsaffection))) %>% 
+  select(statistic, p.value) %>%
+knitr::kable(col.names =  
+               c("X-squared", "p-value"),
+             caption = "Chi-squared test Mother shows affection to chlid by household composition") %>% 
+kableExtra::kable_styling(full_width = FALSE)
+```
+
+```{r, echo=FALSE}
+tidy(chisq.test(table(ELPITOTAL$housecomp, ELPITOTAL$yells))) %>% 
+  select(statistic, p.value) %>%
+knitr::kable(col.names =  
+               c("X-squared", "p-value"),
+             caption = "Chi-squared test Mother yells at chlid by household composition") %>% 
+kableExtra::kable_styling(full_width = FALSE)
+```
+
+```{r, echo=FALSE}
+#lone mothers, absent father
+lonemom <-lonemom %>%
+  filter(!is.na(fathervisit)) %>%
+  filter(!is.na(ecsupport))
+table1(~ fathervisit | ecsupport, data = lonemom, 
+       render.missing = NULL,
+       caption = "Absent father participation")
+
+```
+
+```{r, echo=FALSE}
+#Age group table
+table1(~age_group | year,
+       data = ELPITOTAL, render.missing = NULL,
+       caption = "Age group of children")
+```
+
+```{r, echo=FALSE}
+prop.table(table(ELPITOTAL$housecomp))
+#Covariates comparison
+table1(~preschool + premature +
+            extendedfam + momage + educlevel + works +
+         eqincomeE + fatherint| housecomp,
+       data = ELPITOTAL, overall = F, render.missing = NULL,
+       caption = "Covariates by household composition")
+```
+
+OUTCOMES
+
+```{r, echo=FALSE}
+table1(~battelle_pt_total + tvip_pt| housecomp,
+       data = ELPITOTAL, overall = F, render.missing = NULL,
+       caption = "Child development by household composition")
+```
+
+```{r, echo=FALSE}
+sum(!is.na(ELPITOTAL$battelle_pb_total))
+summary(ELPITOTAL$battelle_pb_total)
+sd(ELPITOTAL$battelle_pb_total, na.rm = T)
+
+sum(!is.na(ELPITOTAL$battelle_pt_total))
+summary(ELPITOTAL$battelle_pt_total)
+sd(ELPITOTAL$battelle_pt_total, na.rm = T)
+
+ELPITOTAL %>% 
+  group_by(housecomp) %>% 
+  ggplot(., aes(x = battelle_pt_total, col = factor(housecomp))) + 
+  geom_density(lwd = 1, adjust = 3) +
+  scale_color_manual(name = " ", 
+                     values = c("#FFCD56", "#4BC0C0", "#FF6384")) +
+  geom_vline(xintercept = 52.6, linetype = "longdash", col ="#FFCD56") +
+  geom_vline(xintercept = 51.3, linetype = "longdash", col ="#4BC0C0") +
+  geom_vline(xintercept = 51.4, linetype = "longdash", col ="#FF6384") +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  labs(x = "Battelle Test Score",
+       y = "Density")
+```
+
+```{r, echo=FALSE}
+sum(!is.na(ELPITOTAL$tvip_pb))
+summary(ELPITOTAL$tvip_pb)
+sd(ELPITOTAL$tvip_pb, na.rm = T)
+
+sum(!is.na(ELPITOTAL$tvip_pt))
+summary(ELPITOTAL$tvip_pt)
+sd(ELPITOTAL$tvip_pt, na.rm = T)
+
+ELPITOTAL %>% 
+  group_by(housecomp) %>% 
+  ggplot(., aes(x = tvip_pt, col = factor(housecomp))) + 
+  geom_density(lwd = 1, adjust = 3) +
+  xlim(25, 175) +
+  scale_color_manual(name = " ", 
+                     values = c("#FFCD56", "#4BC0C0", "#FF6384")) +
+  geom_vline(xintercept = 109, linetype = "longdash", col ="#FFCD56") +
+  geom_vline(xintercept = 106, linetype = "longdash", col ="#4BC0C0") +
+  geom_vline(xintercept = 107, linetype = "longdash", col ="#FF6384") +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  labs(x = "PPVT Test Score",
+       y = "Density")
+```
+
+
+OLS
+
+```{r, echo=FALSE}
+#Battelle
+
+ELPITOTAL$eqincomeE2 <- ELPITOTAL$eqincomeE/100
+
+bt_1 <- lm(battelle_pt_total  ~  housecomp,
+            data = ELPITOTAL)                            #naïve
+
+bt_2 <- lm(battelle_pt_total  ~  housecomp +
+            preschool + premature,
+            data = ELPITOTAL)                            #child characteristics
+
+bt_3 <- lm(battelle_pt_total  ~  housecomp +
+            preschool + premature +
+            extendedfam, 
+            data = ELPITOTAL)                            #house characteristics
+
+bt_4 <- lm(battelle_pt_total  ~  housecomp +
+            preschool + premature +
+            extendedfam + 
+            momage + educlevel + works, 
+            data = ELPITOTAL)                            #mom characteristics
+
+bt_5 <- lm(battelle_pt_total  ~  housecomp +
+            preschool + premature +
+            extendedfam + 
+            momage + educlevel + works +
+            eqincomeE2 + fatherint, 
+            data = ELPITOTAL)                            #mechanisms
+
+
+btoutput_1 <-  tbl_regression(bt_1) %>%
+                add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                add_glance_table(label = list (nobs ~ "Observations"),
+                include = c(nobs)) 
+
+
+btoutput_2 <-  tbl_regression(bt_2) %>%
+                add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                add_glance_table(label = list (nobs ~ "Observations"),
+                include = c(nobs))
+
+btoutput_3 <-  tbl_regression(bt_3) %>%
+                add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                add_glance_table(label = list (nobs ~ "Observations"),
+                include = c(nobs)) 
+
+btoutput_4 <-  tbl_regression(bt_4) %>%
+                add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                add_glance_table(label = list (nobs ~ "Observations"),
+                include = c(nobs)) 
+
+btoutput_5 <-  tbl_regression(bt_5) %>%
+                add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                add_glance_table(label = list (nobs ~ "Observations"),
+                include = c(nobs)) 
+
+#Formatting table
+tbl_merge(tbls = list(btoutput_1, btoutput_2, btoutput_3, 
+                      btoutput_4, btoutput_5),
+          tab_spanner = FALSE)  %>%
+          modify_header(label="*Variable*", estimate_1="(1)", 
+                        estimate_2="(2)",  estimate_3="(3)", 
+                        estimate_4="(4)", estimate_5="(5)") %>%
+          modify_table_body(~.x %>% dplyr::arrange(row_type == 
+                                                     "glance_statistic")) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2,std.error_3,
+                     std.error_4,std.error_5),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels() %>%
+          as_gt() %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3, 
+                      estimate_4, estimate_5), 
+          label =  md("*Dependent variable: Battelle Test*"),
+          gather = FALSE, 
+          level = 2) %>%
+          tab_footnote(
+          footnote = "p<0.1; **p<0.05; **p<0.01",
+          placement = c("left"))
+```
+
+```{r, echo=FALSE}
+#Peabody
+tvip_1 <- lm(tvip_pt  ~  housecomp,
+              data = ELPITOTAL)                            #naïve
+
+tvip_2 <- lm(tvip_pt  ~  housecomp +
+              preschool + premature, 
+              data = ELPITOTAL)                            #child characteristics
+
+tvip_3 <- lm(tvip_pt  ~  housecomp +
+              preschool + premature +
+              extendedfam, 
+              data = ELPITOTAL)                            #house characteristics
+
+tvip_4 <- lm(tvip_pt  ~  housecomp +
+              preschool + premature +
+              extendedfam + 
+              momage + educlevel + works, 
+              data = ELPITOTAL)                            #mom characteristics
+
+tvip_5 <- lm(tvip_pt  ~  housecomp +
+              preschool + premature +
+              extendedfam + 
+              momage + educlevel + works +
+              eqincomeE2 + fatherint, 
+              data = ELPITOTAL)                            #mechanism
+
+
+tvipoutput_1 <-  tbl_regression(tvip_1) %>%
+                  add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                  add_glance_table(label = list (nobs ~ "Observations"),
+                  include = c(nobs))
+
+tvipoutput_2 <-  tbl_regression(tvip_2) %>%
+                  add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                  add_glance_table(label = list (nobs ~ "Observations"),
+                  include = c(nobs))
+
+tvipoutput_3 <-  tbl_regression(tvip_3) %>%
+                  add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                  add_glance_table(label = list (nobs ~ "Observations"),
+                  include = c(nobs)) 
+
+tvipoutput_4 <-  tbl_regression(tvip_4) %>%
+                  add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                  add_glance_table(label = list (nobs ~ "Observations"),
+                  include = c(nobs)) 
+
+tvipoutput_5 <-  tbl_regression(tvip_5) %>%
+                  add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                  add_glance_table(label = list (nobs ~ "Observations"),
+                  include = c(nobs))
+
+
+#Formatting table
+tbl_merge(tbls = list(tvipoutput_1, tvipoutput_2, tvipoutput_3,
+                      tvipoutput_4, tvipoutput_5),
+          tab_spanner = FALSE)  %>%
+          modify_header(label="*Variable*", estimate_1="(1)", 
+                        estimate_2="(2)",  estimate_3="(3)", 
+                        estimate_4="(4)", estimate_5="(5)") %>%
+          modify_table_body(~.x %>% dplyr::arrange(row_type == 
+                                                     "glance_statistic")) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2,std.error_3,
+                     std.error_4,std.error_5),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels() %>%
+          as_gt() %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3, 
+                      estimate_4, estimate_5), 
+          label =  md("*Dependent variable: Peabody Picture Vocabulary Test*"),
+          gather = FALSE, 
+          level = 2) %>%
+          tab_footnote(
+          footnote = "p<0.1; **p<0.05; **p<0.01",
+          placement = c("left"))
+```
+
+
+
+
+
+```{r, echo=FALSE}
+#FE Model
+FEbt1 <- plm(battelle_pt_total ~ housecomp, data=ELPITOTAL, index=c("folio","year"), model =
+            "within", effect="twoways")
+FEbtout1 <- tbl_regression(FEbt1) %>%
+           add_significance_stars()
+FEbt2 <- plm(battelle_pt_total ~ housecomp +
+               extendedfam + works, data=ELPITOTAL, index=c("folio","year"), model =
+            "within", effect="twoways")
+FEbtout2 <- tbl_regression(FEbt2) %>%
+           add_significance_stars()
+
+FEtvip1 <- plm(tvip_pt ~ housecomp, data=ELPITOTAL, index=c("folio","year"), model =
+            "within", effect="twoways")
+FEtvipout1 <- tbl_regression(FEtvip1) %>%
+             add_significance_stars()
+FEtvip2 <- plm(tvip_pt ~ housecomp +
+               extendedfam + works, data=ELPITOTAL, index=c("folio","year"), model =
+            "within", effect="twoways")
+FEtvipout2 <- tbl_regression(FEtvip2) %>%
+             add_significance_stars()
+
+#Formatting table
+tbl_merge(tbls = list(FEbtout1, FEbtout2, FEtvipout1, FEtvipout2),
+          tab_spanner = F)  %>%
+          modify_header(label="*Variable*", estimate_1="(1)", 
+                        estimate_2="(2)",  estimate_3="(3)", 
+                        estimate_4="(4)") %>%
+          modify_table_body(~.x %>% dplyr::arrange(row_type == 
+                                                     "glance_statistic")) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2,std.error_3,std.error_4),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels() %>%
+          as_gt() %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2), 
+          label =  md("BDI"),
+          gather = FALSE, 
+          level = 2) %>%
+          rows_add(
+            label = "Year",
+            estimate_1 = "Included", 
+            estimate_2 = "Included", 
+            estimate_3 = "Included",
+            estimate_4 = "Included") %>%
+          rows_add(
+            label = "Id",
+            estimate_1 = "Included", 
+            estimate_2 = "Included", 
+            estimate_3 = "Included",
+            estimate_4 = "Included") %>%
+          gt::tab_spanner(
+          columns = c(estimate_3, estimate_4), 
+          label =  md("PPVT"),
+          gather = FALSE, 
+          level = 2) %>%
+          tab_footnote(
+          footnote = "p<0.1; **p<0.05; **p<0.01",
+          placement = c("left"))
+
+```
+
+```{r}
+med1 <- tbl_regression(lm(eqincomeE  ~  housecomp, data = ELPITOTAL)) %>%
+                add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                add_glance_table(label = list (nobs ~ "Observations"),
+                include = c(nobs))
+med2 <- tbl_regression(lm(fatherint  ~  housecomp, data = ELPITOTAL)) %>%
+                add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                add_glance_table(label = list (nobs ~ "Observations"),
+                include = c(nobs))
+
+#Formatting table
+tbl_merge(tbls = list(med1, med2),
+          tab_spanner = FALSE)  %>%
+          modify_header(label="*Variable*", 
+                        estimate_1="Fam income", 
+                        estimate_2="Father int") %>%
+          modify_table_body(~.x %>% dplyr::arrange(row_type == 
+                                                     "glance_statistic")) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels() %>%
+          as_gt() %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2), 
+          label =  md("*Correlation of household composition with*"),
+          gather = FALSE, 
+          level = 2) %>%
+          tab_footnote(
+          footnote = "p<0.1; **p<0.05; **p<0.01",
+          placement = c("left"))
+```
+
+```{r}
+med3 <- tbl_regression(lm(battelle_pt_total  ~  eqincomeE2, data = ELPITOTAL)) %>%
+                add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                add_glance_table(label = list (nobs ~ "Observations"),
+                include = c(nobs)) 
+med4 <- tbl_regression(lm(tvip_pt  ~  eqincomeE2, data = ELPITOTAL)) %>%
+                add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                add_glance_table(label = list (nobs ~ "Observations"),
+                include = c(nobs))
+
+med5 <- tbl_regression(lm(battelle_pt_total  ~  fatherint, data = ELPITOTAL)) %>%
+                add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                add_glance_table(label = list (nobs ~ "Observations"),
+                include = c(nobs)) 
+med6 <- tbl_regression(lm(tvip_pt  ~  fatherint, data = ELPITOTAL)) %>%
+                add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
+                add_glance_table(label = list (nobs ~ "Observations"),
+                include = c(nobs))
+
+#Formatting table
+tbl_merge(tbls = list(med3, med4, med5, med6),
+          tab_spanner = F)  %>%
+          modify_header(label="*Variable*", estimate_1="BDI", 
+                        estimate_2="PPVT",  estimate_3="BDI", 
+                        estimate_4="PPVT") %>%
+          modify_table_body(~.x %>% dplyr::arrange(row_type == 
+                                                     "glance_statistic")) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2,std.error_3,std.error_4),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels() %>%
+          as_gt() %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3, estimate_4), 
+          label =  md("Correlation of variables with"),
+          gather = FALSE, 
+          level = 2) %>%
+          tab_footnote(
+          footnote = "p<0.1; **p<0.05; **p<0.01",
+          placement = c("left"))
+```
+
+```{r}
+#Coefficient plot
+tidy_bt_4 <- tidy(bt_4, conf.int = TRUE)
+bt_4_data <- tidy_bt_4 %>%
+  mutate(model = "OLS") %>%
+  filter(term == "housecomp2. Two cohabiting parents" | term == "housecomp3. Lone mother")
+
+tidy_FEbt2 <- tidy(FEbt2, conf.int = TRUE)
+FEbt2_data <- tidy_FEbt2 %>%
+  mutate(model = "Fixed Effects") %>%
+  filter(term == "housecomp2. Two cohabiting parents" | term == "housecomp3. Lone mother")
+
+combined_data <- rbind(bt_4_data, FEbt2_data) %>%
+  rename(household = term)
+
+ggplot(combined_data, aes(x = household, y = estimate, ymin = conf.low, 
+                          ymax = conf.high, color = household)) +
+  geom_pointrange() +
+  facet_wrap(~model) +
+  scale_color_manual(values = c("housecomp2. Two cohabiting parents" = "#4BC0C0",
+                                "housecomp3. Lone mother" = "#FF6384"),
+                     labels = c("2. Two cohabiting parents", "3. Lone mother")) +
+  scale_x_discrete(labels = NULL, breaks = NULL) +
+  labs(title = "BDI", y = "Coefficient", x = "") +
+  theme_bw() + theme(legend.position="none")
+```
+```{r}
+#Coefficient plot
+tidy_tvip_4 <- tidy(tvip_4, conf.int = TRUE)
+tvip_4_data <- tidy_tvip_4 %>%
+  mutate(model = "OLS") %>%
+  filter(term == "housecomp2. Two cohabiting parents" | term == "housecomp3. Lone mother")
+
+tidy_FEtvip2 <- tidy(FEtvip2, conf.int = TRUE)
+FEtvip2_data <- tidy_FEtvip2 %>%
+  mutate(model = "Fixed Effects") %>%
+  filter(term == "housecomp2. Two cohabiting parents" | term == "housecomp3. Lone mother")
+
+combined_data <- rbind(tvip_4_data, FEtvip2_data) %>%
+  rename(household = term)
+
+ggplot(combined_data, aes(x = household, y = estimate, ymin = conf.low, 
+                          ymax = conf.high, color = household)) +
+  geom_pointrange() +
+  facet_wrap(~model) +
+  scale_color_manual(values = c("housecomp2. Two cohabiting parents" = "#4BC0C0",
+                                "housecomp3. Lone mother" = "#FF6384"),
+                     labels = c("2. Two cohabiting parents", "3. Lone mother")) +
+  scale_x_discrete(labels = NULL, breaks = NULL) +
+  labs(title = "PPVT", y = "Coefficient", x = "") +
+  theme_bw() + theme(legend.title = element_text(size=14), 
+                     legend.text = element_text(size=14),legend.position="bottom")
+```
