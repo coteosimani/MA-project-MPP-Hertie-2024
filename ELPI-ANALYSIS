@@ -21,8 +21,10 @@ library(gt)
 library(lmtest)
 library(plm)
 library(ggplot2)
+```
 
-#INTERVIEW DATA: 15175__________________________________________________________
+```{r, eval=FALSE}
+#INTERVIEW DATA 2010__________________________________________________________
 interview2010 <- read_dta("Entrevista_2010.dta")
 
 interview2010 <- interview2010 %>%
@@ -65,21 +67,12 @@ interview2010 <- interview2010 %>%
                   ifelse(is.na(g42_f2), 0, 1)),
          fatherint = dadread + dadstory + dadsing + dadtime,  #number of father interactions
          fathercare =
-           ifelse(fatherint!=0, "2. Yes", "1. No"),      #father provides care last 7 days
+           ifelse(fatherint!=0, "2. Yes", "1. No"),        #father provides care last 7 days
          fathercare=as.factor(fathercare)) %>%
-  mutate(muestra = 1)
-
-interview2010 <- interview2010 %>%
+  mutate(muestra = 1) %>%
   select(folio, muestra, bioparent, fathervisit, ecsupport, premature, fatherint, fathercare)
 
-#final data: 14299
-
-table(interview2010$bioparent)    
-#Parent who live in the household
-#1. both biological parents: 10316 72.5%
-#2. just biological mother: 3920 27.5%
-
-#HOUSEHOLD DATA: 74237__________________________________________________________
+#HOUSEHOLD DATA 2010__________________________________________________________
 household2010 <- read_dta("Hogar_2010.dta")
 
 household2010 <- household2010 %>%
@@ -156,16 +149,14 @@ household2010 <- household2010 %>%
   mutate(works=
            ifelse(c1==1 | c3==1, "2. Yes", "1. No")) %>%  #work situation variable
   mutate(works=as.factor(works)) %>%
-  filter(a16==1) 
-
-household2010 <- household2010 %>%
+  filter(a16==1) %>%
   select(folio, momage, extendedfam, maritalstatus, preschool, educlevel, 
          works, indincome, indincomeE, eqincome, eqincomeE)
 
 #QUESTIONEIRE: INTERVIEW + HOUSEHOLD
 questionaire2010 <- merge(interview2010, household2010, by = "folio")
 
-# EVALUATION DATA_______________________________________________________________
+#EVALUATION DATA 2010_______________________________________________________________
 evaluation2010 <- read_dta("Evaluaciones_2010.dta")
 
 evaluation2010 <- evaluation2010 %>%
@@ -180,12 +171,8 @@ evaluation2010 <- evaluation2010 %>%
          talks =
            ifelse(hm1_1 == 1, "2. Yes", "1. No"), 
          showsaffection =
-           ifelse(hm1_6 == 1, "2. Yes", "1. No"),
-         yells =
-           ifelse(hm1_9 == 0, "2. Yes", "1. No"))
-
-evaluation2010 <- evaluation2010 %>%
-  select(folio, edad_meses, age_group,talks, showsaffection, yells, 
+           ifelse(hm1_6 == 1, "2. Yes", "1. No")) %>%
+  select(folio, edad_meses, age_group,talks, showsaffection, 
          battelle_pb_total, battelle_pt_total, tvip_pb, tvip_pt)
 
 #ELPI 2010: QUESTOINAIRE + EVALUATION
@@ -204,7 +191,7 @@ ELPI2010 <- ELPI2010 %>%
 
 saveRDS(ELPI2010, "ELPI 2010.rds")
 
-#INTERVIEW DATA: 16033__________________________________________________________
+#INTERVIEW DATA 2012__________________________________________________________
 interview2012 <- read_dta("Entrevista_2012.dta")
 
 interview2012 <- interview2012 %>%
@@ -249,19 +236,10 @@ interview2012 <- interview2012 %>%
            ifelse(fatherint > 5, NA, fatherint),
          fathercare =
            ifelse(fatherint!=0, "2. Yes", "1. No"),      #father provides care last 7 days
-         fathercare=as.factor(fathercare))
-
-interview2012 <- interview2012 %>%
+         fathercare=as.factor(fathercare)) %>%
   select(folio, muestra, bioparent, fathervisit, ecsupport, premature, fatherint, fathercare)
 
-#final data: 14236
-
-prop.table(table(interview2012$bioparent))
-#Parent who live in the household
-#1. both biological parents: 10638 71.4%
-#2. just biological mother: 4245 28.5%
-
-#HOUSEHOLD DATA: 74237__________________________________________________________
+#HOUSEHOLD DATA 2012__________________________________________________________
 household2012 <- read_dta("Hogar_2012.dta")
 
 household2012 <- household2012 %>%
@@ -372,12 +350,8 @@ evaluation2012 <- evaluation2012 %>%
          talks =
            ifelse(hm1_1 == 1, "2. Yes", "1. No"), 
          showsaffection =
-           ifelse(hm1_6 == 1, "2. Yes", "1. No"),
-         yells =
-           ifelse(hm1_9 == 0, "2. Yes", "1. No"))
-
-evaluation2012 <- evaluation2012 %>%
-  select(folio, edad_meses, age_group,talks, showsaffection, yells, 
+           ifelse(hm1_6 == 1, "2. Yes", "1. No")) %>%
+  select(folio, edad_meses, age_group,talks, showsaffection, 
          battelle_pb_total, battelle_pt_total, tvip_pb, tvip_pt)
 
 #ELPI 2012: QUESTOINAIRE + EVALUATION
@@ -396,7 +370,7 @@ ELPI2012 <- ELPI2012 %>%
 
 saveRDS(ELPI2012, "ELPI 2012.rds")
 
-#INTERVIEW DATA: _______________________________________________________________
+#INTERVIEW + HOUSHOLD DATA 2017___________________________________________________________
 questionaire2017 <- read_dta("Entrevista_2017.dta")
 
 questionaire2017 <- questionaire2017 %>%
@@ -507,15 +481,13 @@ questionaire2017 <- questionaire2017 %>%
   mutate(muestra =
              ifelse(!is.na(orden_10), 1, 
              ifelse(is.na(orden_10) &
-                      !is.na(orden_12), 2, 3)))
-
-questionaire2017 <- questionaire2017 %>%
+                      !is.na(orden_12), 2, 3))) %>%
   select(folio, muestra, bioparent, fathervisit, ecsupport, 
          premature, fatherint, fathercare, momage, 
          extendedfam, maritalstatus, preschool, educlevel, 
          works, indincome, indincomeE, eqincome, eqincomeE)
 
-# EVALUATION DATA_______________________________________________________________
+# EVALUATION DATA 2017____________________________________________________________
 evaluation2017 <- read_dta("Evaluaciones_2017.dta")
 
 evaluation2017 <- evaluation2017 %>%
@@ -531,15 +503,11 @@ evaluation2017 <- evaluation2017 %>%
          talks =
            ifelse(home_p1 == 1, "2. Yes", "1. No"), 
          showsaffection =
-           ifelse(home_p3 == 1, "2. Yes", "1. No"),
-         yells =
-           ifelse(home_p11 == 0, "2. Yes", "1. No"))
-
-evaluation2017 <- evaluation2017 %>%
-  select(folio, edad_meses, age_group,talks, showsaffection, yells, 
+           ifelse(home_p3 == 1, "2. Yes", "1. No")) %>%
+  select(folio, edad_meses, age_group,talks, showsaffection, 
          battelle_pb_total, battelle_pt_total, tvip_pb, tvip_pt)
 
-#ELPI 2012: QUESTOINAIRE + EVALUATION
+#ELPI 2017: QUESTOINAIRE + EVALUATION
 ELPI2017 <- merge(questionaire2017, evaluation2017, by = "folio")
 
 ELPI2017 <- ELPI2017 %>%
@@ -563,8 +531,6 @@ ELPI2017 <- readRDS("ELPI 2017.rds")
 
 ELPI1 = bind_rows(ELPI2010, ELPI2012)
 ELPITOTAL = bind_rows(ELPI1, ELPI2017)
-
-table(ELPITOTAL$talks, ELPITOTAL$year, useNA = "ifany")
 
 ELPITOTAL <- ELPITOTAL %>%
   mutate(premature = 
@@ -594,15 +560,6 @@ ELPITOTAL <- ELPITOTAL %>%
   mutate(showsaffection = 
            ifelse(showsaffection_max== 2, "2. Yes",
            ifelse(showsaffection_max == 1, "1. No", NA))) %>%
-  mutate(yells2 = 
-           ifelse(is.na(yells), 0, 
-           ifelse(yells == "2. Yes", 2, 1))) %>%
-  group_by(folio) %>%
-  mutate(yells_max = max(yells2)) %>%
-  ungroup() %>%
-  mutate(yells = 
-           ifelse(yells_max== 2, "2. Yes",
-           ifelse(yells_max == 1, "1. No", NA))) %>%
   filter(eqincomeE >=10,
          eqincomeE < quantile(eqincomeE, probs = 0.99)) 
   
@@ -611,7 +568,7 @@ ELPITOTAL <- ELPITOTAL %>%
          premature, fatherint, fathercare,
          momage, extendedfam, maritalstatus, preschool, 
          educlevel, works, indincome, indincomeE, eqincome, eqincomeE,
-         edad_meses, age_group,talks, showsaffection, yells, 
+         edad_meses, age_group,talks, showsaffection, 
          battelle_pb_total, battelle_pt_total, tvip_pb, tvip_pt)
 
 label(ELPITOTAL$year) <- "Year of survey"
@@ -637,29 +594,31 @@ label(ELPITOTAL$edad_meses) <- "Child's age (on months)"
 label(ELPITOTAL$age_group) <- "Age group"
 label(ELPITOTAL$talks) <- "Mother talks to the child at least twice"
 label(ELPITOTAL$showsaffection) <- "Mother gives kisses, cuddles, or hugs the child at least once"
-label(ELPITOTAL$yells) <- "Mum yells at the child at least once"
 label(ELPITOTAL$battelle_pb_total) <- "Battelle Score"
 label(ELPITOTAL$battelle_pt_total) <- "Battelle Score Standarised"
 label(ELPITOTAL$tvip_pb) <- "PPVT Score"
 label(ELPITOTAL$tvip_pt) <- "PPVT Score Standarised"
 
 saveRDS(ELPITOTAL, "ELPI Total.rds")
+```
 
 ```{r, echo=FALSE}
+# Data of lone mothers
 lonemom <- ELPITOTAL %>%
   filter(bioparent == "2. Just biological mother") %>% 
   select(eqincomeE, fathervisit, ecsupport, fatherint, talks, 
-         showsaffection, yells)
+         showsaffection)
+
+# Data of two parents in the houshold
 twoparents <- ELPITOTAL %>%
   filter(bioparent == "1. Both biological parents") %>% 
-  select(eqincomeE, fatherint, talks, showsaffection, yells)
+  select(eqincomeE, fatherint, talks, showsaffection)
+
+# Data of two married parents in the houshold
 twomarrparents <- ELPITOTAL %>%
   filter(housecomp == "1. Two married parents") %>% 
- select(eqincomeE, fatherint, talks, showsaffection, yells)
+ select(eqincomeE, fatherint, talks, showsaffection)
 ```
-
-
-
 
 ```{r}
 #lone mothers vs two-parents household income
@@ -670,7 +629,6 @@ knitr::kable(col.names =
              caption = "T-Test Household income: Lone mothers vs Two-parents") %>% 
 kableExtra::kable_styling(full_width = FALSE)
 ```
-
 
 ```{r, echo=FALSE}
 #lone mothers vs two married parents household income
@@ -684,7 +642,6 @@ kableExtra::kable_styling(full_width = FALSE)
 
 ```{r, echo=FALSE}
 #lone mothers vs two parents father interactions
-
 tidy(t.test(lonemom$fatherint, twoparents$fatherint)) %>% 
   select(statistic, p.value,	conf.low,	conf.high,	alternative) %>%
 knitr::kable(col.names =  
@@ -694,11 +651,9 @@ kableExtra::kable_styling(full_width = FALSE)
 
 ```
 
-
-
 ```{r, echo=FALSE}
 #Mother's attitude comparison
-table1(~talks + showsaffection + yells | housecomp,
+table1(~talks + showsaffection | housecomp,
        data = ELPITOTAL, topclass="shade", overall = F,
        caption = "Mother's attitude by household composition")
 ```
@@ -723,15 +678,6 @@ kableExtra::kable_styling(full_width = FALSE)
 ```
 
 ```{r, echo=FALSE}
-tidy(chisq.test(table(ELPITOTAL$housecomp, ELPITOTAL$yells))) %>% 
-  select(statistic, p.value) %>%
-knitr::kable(col.names =  
-               c("X-squared", "p-value"),
-             caption = "Chi-squared test Mother yells at chlid by household composition") %>% 
-kableExtra::kable_styling(full_width = FALSE)
-```
-
-```{r, echo=FALSE}
 #lone mothers, absent father
 lonemom <-lonemom %>%
   filter(!is.na(fathervisit)) %>%
@@ -739,7 +685,6 @@ lonemom <-lonemom %>%
 table1(~ fathervisit | ecsupport, data = lonemom, 
        render.missing = NULL,
        caption = "Absent father participation")
-
 ```
 
 ```{r, echo=FALSE}
@@ -758,6 +703,7 @@ table1(~preschool + premature +
        data = ELPITOTAL, overall = F, render.missing = NULL,
        caption = "Covariates by household composition")
 ```
+
 
 OUTCOMES
 
@@ -984,12 +930,10 @@ tbl_merge(tbls = list(tvipoutput_1, tvipoutput_2, tvipoutput_3,
           placement = c("left"))
 ```
 
-
-
-
+FE
 
 ```{r, echo=FALSE}
-#FE Model
+#Battelle
 FEbt1 <- plm(battelle_pt_total ~ housecomp, data=ELPITOTAL, index=c("folio","year"), model =
             "within", effect="twoways")
 FEbtout1 <- tbl_regression(FEbt1) %>%
@@ -1000,6 +944,7 @@ FEbt2 <- plm(battelle_pt_total ~ housecomp +
 FEbtout2 <- tbl_regression(FEbt2) %>%
            add_significance_stars()
 
+#Peabody
 FEtvip1 <- plm(tvip_pt ~ housecomp, data=ELPITOTAL, index=c("folio","year"), model =
             "within", effect="twoways")
 FEtvipout1 <- tbl_regression(FEtvip1) %>%
@@ -1053,6 +998,7 @@ tbl_merge(tbls = list(FEbtout1, FEbtout2, FEtvipout1, FEtvipout2),
 ```
 
 ```{r}
+# Mediators correlation test
 med1 <- tbl_regression(lm(eqincomeE  ~  housecomp, data = ELPITOTAL)) %>%
                 add_significance_stars(thresholds = c(0.01, 0.05, 0.1)) %>%
                 add_glance_table(label = list (nobs ~ "Observations"),
@@ -1129,8 +1075,10 @@ tbl_merge(tbls = list(med3, med4, med5, med6),
           placement = c("left"))
 ```
 
+COEFFICIENT PLOT
+
 ```{r}
-#Coefficient plot
+#Battelle coefficient plots
 tidy_bt_4 <- tidy(bt_4, conf.int = TRUE)
 bt_4_data <- tidy_bt_4 %>%
   mutate(model = "OLS") %>%
@@ -1155,8 +1103,9 @@ ggplot(combined_data, aes(x = household, y = estimate, ymin = conf.low,
   labs(title = "BDI", y = "Coefficient", x = "") +
   theme_bw() + theme(legend.position="none")
 ```
+
 ```{r}
-#Coefficient plot
+#Peabody coefficient plots
 tidy_tvip_4 <- tidy(tvip_4, conf.int = TRUE)
 tvip_4_data <- tidy_tvip_4 %>%
   mutate(model = "OLS") %>%
